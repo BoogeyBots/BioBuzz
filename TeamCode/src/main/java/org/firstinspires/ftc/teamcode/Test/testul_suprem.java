@@ -1,7 +1,6 @@
-package org.firstinspires.ftc.teamcode;
+package org.firstinspires.ftc.teamcode.Test;
 
 import com.pedropathing.follower.Follower;
-import com.pedropathing.localization.Localizer;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
@@ -150,7 +149,7 @@ public class testul_suprem extends OpMode {
             if (timerSquare.milliseconds() >= intarzierePornireMotoareMs) {
                 mi.setPower(-1);
                 mtr.setPower(1);
-                esteInAsteptareSquare = false; // Am pornit motoarele, oprim așteptarea
+                esteInAsteptareSquare = false;
             }
         }
 
