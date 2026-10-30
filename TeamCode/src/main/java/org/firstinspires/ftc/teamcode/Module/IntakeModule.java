@@ -1,14 +1,24 @@
 package org.firstinspires.ftc.teamcode.Module;
 
+import com.bylazar.configurables.annotations.Configurable;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.Servo;
+import com.qualcomm.robotcore.hardware.VoltageSensor;
+import com.qualcomm.robotcore.util.Range;
 
+@Configurable
 public class IntakeModule {
     private final HardwareMap hardwareMap;
     private DcMotorEx mi, mtr;
     private Servo servo_faras;
+    private VoltageSensor voltageSensor;
+
+    // Compensare voltaj pentru motorul de transfer
+    public static boolean enableVoltageCompensationTransfer = true;
+    public static double nominalVoltageTransfer = 10.5; // Voltajul nominal de referinta (configurabil in Panels)
+    public static double transferVoltage = 10.5;
 
     private double lastIntakePower = 0.0;
     private double lastTransferPower = 0.0;
@@ -24,6 +34,12 @@ public class IntakeModule {
         mi = hardwareMap.get(DcMotorEx.class, "motor_intake");
         mtr = hardwareMap.get(DcMotorEx.class, "motor_transfer");
         servo_faras = hardwareMap.get(Servo.class, "servo_faras");
+
+        try {
+            voltageSensor = hardwareMap.voltageSensor.iterator().next();
+        } catch (Exception e) {
+            voltageSensor = null;
+        }
 
         mi.setDirection(DcMotorSimple.Direction.REVERSE);
         setFarasPosition(0.82);
@@ -45,9 +61,20 @@ public class IntakeModule {
             power = 0.0;
         }
 
-        if (Math.abs(power - lastTransferPower) > POWER_THRESHOLD || (power == 0.0 && lastTransferPower != 0.0)) {
-            mtr.setPower(power);
-            lastTransferPower = power;
+        double targetPower = power;
+        if (power != 0.0 && enableVoltageCompensationTransfer && voltageSensor != null) {
+            try {
+                transferVoltage = voltageSensor.getVoltage();
+                if (transferVoltage > 6.0) {
+                    targetPower = Range.clip(power * (nominalVoltageTransfer / transferVoltage), -1.0, 1.0);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (Math.abs(targetPower - lastTransferPower) > POWER_THRESHOLD || (targetPower == 0.0 && lastTransferPower != 0.0)) {
+            mtr.setPower(targetPower);
+            lastTransferPower = targetPower;
         }
     }
 
