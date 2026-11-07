@@ -26,6 +26,7 @@ public class TeleOp extends OpMode {
     PinpointModule pinpoint;
     TurretModule turret;
     private Follower follower;
+
     public static double vel = 700;
     private boolean previousA = false;
     boolean tragemsinoi = false;
@@ -34,14 +35,17 @@ public class TeleOp extends OpMode {
     private boolean deblocatActivat = false;
     private boolean feedPornit = false;
 
-    // Control servo_rampa (pozitie initiala 1.0 -> miscare spre pozitia tinta ex: 0.8 la scaderea vitezei)
-    public static double posRampaInitial = 1.0;      // Pozitia initiala (de repaus) a rampei (default 1.0)
-    public static double posRampaTarget = 0.8;       // Pozitia tinta a rampei (reglabila in Panels, ex: 0.8)
-    public static boolean folosescUndershoot = true; // true = foloseste scaderea de viteza (undershoot/drop), false = doar timer
-    public static double marjaUndershoot = 40.0;     // Cate unitati de viteza sub target declanseaza miscarea rampei
-    public static double delayRampaMs = 150.0;       // Timer delay in ms de la alimentarea bilei daca folosescUndershoot == false
-    public static boolean fallbackTimerActiv = true; // Backup de siguranta pe timer daca undershoot-ul nu e detectat la timp
-    public static double fallbackTimeoutMs = 600.0;  // Timeout fallback in milisecunde pentru backup de siguranta
+    // Control servo_rampa (pozitie initiala 0.68 -> pozitie tinta 1.0)
+    public static double posRampaInitial = OuttakeModule.POS_RAMPA_INITIAL;
+    public static double posRampaTarget = OuttakeModule.POS_RAMPA_TARGET;
+    public static boolean folosescUndershoot = true;
+    public static double marjaUndershoot = 40.0;
+    public static double delayRampaMs = 150.0;
+    public static boolean fallbackTimerActiv = true;
+    public static double fallbackTimeoutMs = 600.0;
+
+    // Putere transfer la apasarea pe trigger (configurabila in Panels)
+    public static double putereTransferTrigger = 0.5;
 
     private ElapsedTime timerRampa = new ElapsedTime();
     private boolean rampaCoborata = false;
@@ -62,6 +66,12 @@ public class TeleOp extends OpMode {
     }
 
     @Override
+    public void start() {
+        // La pornirea TeleOp-ului, shooter-ul porneste direct la viteza vel
+        OuttakeModule.target_velocity = vel;
+    }
+
+    @Override
     public void loop() {
         follower.manual(
                 -gamepad1.left_stick_y,
@@ -74,65 +84,65 @@ public class TeleOp extends OpMode {
         outtake.update(vel);
         turret.update();
 
+        // Buton A: Pornire / Oprire secventa de tragere
         if (gamepad1.a && !previousA) {
             act_outtake = !act_outtake;
             deblocatActivat = false;
             feedPornit = false;
             rampaCoborata = false;
 
-            if (act_outtake) {
-                outtake.resetBoost();
-                // S-a pornit shooter-ul -> blocam servo_blocaj si punem rampa la pozitia initiala (1.0)
-                outtake.blocat();
-                outtake.setRampa(posRampaInitial);
-                intake.trage_intake(0.6);
-                intake.trage_transfer(1.0);
-            } else {
-                outtake.resetBoost();
-                // S-a oprit shooter-ul -> blocam si rampa revine la pozitia initiala (1.0)
-                outtake.blocat();
-                outtake.setRampa(posRampaInitial);
+            outtake.resetBoost();
+            outtake.blocat();
+            outtake.setRampa(posRampaInitial);
+
+            if (!act_outtake) {
                 intake.stop_intake();
                 intake.stop_transfer();
             }
         }
         previousA = gamepad1.a;
 
-        // Verificam viteza shooter-ului
-        double delta_velocity = velocity - target_velocity - 1;
-        tragemsinoi = (delta_velocity < 40 && delta_velocity > -11 && act_outtake);
+        // Verificam daca viteza flywheel-ului a atins target-ul
+        double delta_velocity = velocity - target_velocity;
+        tragemsinoi = (act_outtake && target_velocity > 0 && Math.abs(delta_velocity) < 40);
 
-        if (tragemsinoi && !deblocatActivat) {
-            outtake.deblocat();
-            timerDeblocat.reset();
-            deblocatActivat = true;
-        }
-
-        if (deblocatActivat && timerDeblocat.milliseconds() >= 100 && act_outtake) {
-            if (!feedPornit) {
-                feedPornit = true;
-                timerRampa.reset();
+        if (act_outtake) {
+            // Se deblocheaza servo blocaj doar cand ajunge la target velocity
+            if (tragemsinoi && !deblocatActivat) {
+                outtake.deblocat();
+                timerDeblocat.reset();
+                deblocatActivat = true;
             }
+
+            // Dupa ce se da blocajul (delay pentru miscare fizica a servo-ului), pornesc motoarele
+            if (deblocatActivat && timerDeblocat.milliseconds() >= 100) {
+                if (!feedPornit) {
+                    feedPornit = true;
+                    timerRampa.reset();
+                }
+            }
+        } else {
+            // Cand nu se trage, blocajul ramane pus
+            outtake.blocat();
+            deblocatActivat = false;
+            feedPornit = false;
         }
 
-        // Logica pozitionare rampa
+        // Logica pozitionare rampa la tragere
         if (act_outtake) {
             if (feedPornit && !rampaCoborata) {
                 boolean declanseazaRampa = false;
 
                 if (folosescUndershoot) {
-                    // Viteza a scazut sub target cu marja configurata (cand bila atinge flywheel-ul)
                     boolean undershoot = velocity < (target_velocity - marjaUndershoot);
-                    // Backup pe timer in milisecunde: daca undershoot-ul nu e atins in timp util
                     boolean timeoutSiguranta = fallbackTimerActiv && (timerRampa.milliseconds() >= fallbackTimeoutMs);
                     declanseazaRampa = undershoot || timeoutSiguranta;
                 } else {
-                    // Mod doar pe timer (in milisecunde de la start feed)
                     declanseazaRampa = timerRampa.milliseconds() >= delayRampaMs;
                 }
 
                 if (declanseazaRampa) {
-                    outtake.setRampa(posRampaTarget); // Rampa se duce la pozitia tinta (default 0.8 sau aleasa in Panels)
+                    outtake.setRampa(posRampaTarget);
                     rampaCoborata = true;
                 } else {
                     outtake.setRampa(posRampaInitial);
@@ -143,17 +153,26 @@ public class TeleOp extends OpMode {
                 outtake.setRampa(posRampaInitial);
             }
         } else {
-            // Cand shooter-ul este oprit, rampa ramane la pozitia initiala (1.0)
             outtake.setRampa(posRampaInitial);
         }
 
+        // Control motoare Intake si Transfer
         if (act_outtake) {
-            intake.trage_intake(1.0);
-            intake.trage_transfer(1.0);
+            if (feedPornit) {
+                // Automatizarea cand motoarele sunt la target velocity si blocajul e dat:
+                intake.trage_intake(1.0);
+                intake.trage_transfer(1.0);
+            } else {
+                // Pana atinge target velocity, motoarele stau oprite
+                intake.stop_intake();
+                intake.stop_transfer();
+            }
         } else if (gamepad1.right_trigger > 0.05) {
+            // Right trigger (cum era inainte: proportional cu trigger-ul la intake)
             intake.trage_intake(gamepad1.right_trigger);
-            intake.trage_transfer(gamepad1.right_trigger);
+            intake.trage_transfer(putereTransferTrigger);
         } else if (gamepad1.left_trigger > 0.05) {
+            // Left trigger (evacuare / scuipa)
             intake.scuipa_intake(gamepad1.left_trigger);
             intake.scuipa_transfer(gamepad1.left_trigger);
         } else {
@@ -167,12 +186,17 @@ public class TeleOp extends OpMode {
             intake.farasjos();
         }
 
+        if (gamepad1.dpad_left) {
+            outtake.blocat();
+        } else if (gamepad1.dpad_right) {
+            outtake.deblocat();
+        }
+
         telemetry.addData("Act Outtake", act_outtake);
         telemetry.addData("Poz Rampa Initial", posRampaInitial);
         telemetry.addData("Poz Rampa Target", posRampaTarget);
         telemetry.addData("Rampa Pozitie Curenta", rampaCoborata ? posRampaTarget : posRampaInitial);
         telemetry.addData("Rampa Coborata", rampaCoborata);
-        telemetry.addData("Timer Rampa (ms)", timerRampa.milliseconds());
         telemetry.addData("Feed Pornit", feedPornit);
         telemetry.addData("Distanta", distanta);
         telemetry.addData("Velocity", velocity);
