@@ -15,7 +15,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
 @Configurable
 @TeleOp
 public class outtake_test extends LinearOpMode {
-    DcMotorEx motordr, motorst, motor_intake, motor_transfer;
+    DcMotorEx motordr, motorst;
     public static double targe, p = 0.003, ks = 0.1, kv = 0.000429266, ka = 0.005, velocity, manual_pow;
     public static boolean manual = false;
     double voltage;

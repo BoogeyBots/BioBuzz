@@ -1,14 +1,15 @@
 package org.firstinspires.ftc.teamcode;
 
 import static org.firstinspires.ftc.teamcode.Module.OuttakeModule.act_outtake;
+import static org.firstinspires.ftc.teamcode.Module.OuttakeModule.rampa_reper;
 import static org.firstinspires.ftc.teamcode.Module.OuttakeModule.target_velocity;
-import static org.firstinspires.ftc.teamcode.Module.OuttakeModule.velocity;
-import static org.firstinspires.ftc.teamcode.Module.PinpointModule.currentX;
-import static org.firstinspires.ftc.teamcode.Module.PinpointModule.currentY;
 import static org.firstinspires.ftc.teamcode.Module.PinpointModule.distanta;
+import static org.firstinspires.ftc.teamcode.Module.TurretModule.decalation;
+import static org.firstinspires.ftc.teamcode.Module.OuttakeModule.velocity;
 
 import com.bylazar.configurables.annotations.Configurable;
 import com.pedropathing.follower.Follower;
+import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
@@ -18,6 +19,8 @@ import org.firstinspires.ftc.teamcode.Module.PinpointModule;
 import org.firstinspires.ftc.teamcode.Module.TurretModule;
 import org.firstinspires.ftc.teamcode.pedro.Constants;
 
+import java.util.List;
+
 @com.qualcomm.robotcore.eventloop.opmode.TeleOp
 @Configurable
 public class TeleOp extends OpMode {
@@ -26,29 +29,17 @@ public class TeleOp extends OpMode {
     PinpointModule pinpoint;
     TurretModule turret;
     private Follower follower;
+    double delta_velocity;
+    ElapsedTime timer;
+    boolean target_atins = false, lastA = false, rampa_jos = false;
+    double viteza_ref;
+    public static double PRAG_COBORARE = 45, RAMPA_SUS = 1, RAMPA_JOS = 1.05;
 
-    public static double vel = 700;
-    private boolean previousA = false;
-    boolean tragemsinoi = false;
+    enum STATE {
+        trage,
+        numaitrage
+    }
 
-    private ElapsedTime timerDeblocat = new ElapsedTime();
-    private boolean deblocatActivat = false;
-    private boolean feedPornit = false;
-
-    // Control servo_rampa (pozitie initiala 0.68 -> pozitie tinta 1.0)
-    public static double posRampaInitial = OuttakeModule.POS_RAMPA_INITIAL;
-    public static double posRampaTarget = OuttakeModule.POS_RAMPA_TARGET;
-    public static boolean folosescUndershoot = true;
-    public static double marjaUndershoot = 40.0;
-    public static double delayRampaMs = 150.0;
-    public static boolean fallbackTimerActiv = true;
-    public static double fallbackTimeoutMs = 600.0;
-
-    // Putere transfer la apasarea pe trigger (configurabila in Panels)
-    public static double putereTransferTrigger = 0.5;
-
-    private ElapsedTime timerRampa = new ElapsedTime();
-    private boolean rampaCoborata = false;
 
     @Override
     public void init() {
@@ -63,16 +54,19 @@ public class TeleOp extends OpMode {
         turret.init();
 
         follower = Constants.create(hardwareMap);
+
+        timer = new ElapsedTime(ElapsedTime.Resolution.MILLISECONDS);
+
+        act_outtake = false;
+
+
     }
 
-    @Override
-    public void start() {
-        // La pornirea TeleOp-ului, shooter-ul porneste direct la viteza vel
-        OuttakeModule.target_velocity = vel;
-    }
 
     @Override
     public void loop() {
+        double voltage = hardwareMap.voltageSensor.iterator().next().getVoltage();
+
         follower.manual(
                 -gamepad1.left_stick_y,
                 -gamepad1.left_stick_x,
@@ -80,132 +74,82 @@ public class TeleOp extends OpMode {
         );
 
         follower.update();
-        pinpoint.update();
-        outtake.update(vel);
+        pinpoint.update_blue();
+        outtake.update(voltage);
         turret.update();
 
-        // Buton A: Pornire / Oprire secventa de tragere
-        if (gamepad1.a && !previousA) {
+        delta_velocity = velocity - target_velocity - 1;
+
+        if (gamepad1.a && !lastA) {
             act_outtake = !act_outtake;
-            deblocatActivat = false;
-            feedPornit = false;
-            rampaCoborata = false;
-
-            outtake.resetBoost();
-            outtake.blocat();
-            outtake.setRampa(posRampaInitial);
-
+            target_atins = false;
+            rampa_jos = false;
             if (!act_outtake) {
-                intake.stop_intake();
-                intake.stop_transfer();
+                outtake.blocat();
             }
+            timer.reset();
         }
-        previousA = gamepad1.a;
+        lastA = gamepad1.a;
 
-        // Verificam daca viteza flywheel-ului a atins target-ul
-        double delta_velocity = velocity - target_velocity;
-        tragemsinoi = (act_outtake && target_velocity > 0 && Math.abs(delta_velocity) < 40);
-
-        if (act_outtake) {
-            // Se deblocheaza servo blocaj doar cand ajunge la target velocity
-            if (tragemsinoi && !deblocatActivat) {
-                outtake.deblocat();
-                timerDeblocat.reset();
-                deblocatActivat = true;
-            }
-
-            // Dupa ce se da blocajul (delay pentru miscare fizica a servo-ului), pornesc motoarele
-            if (deblocatActivat && timerDeblocat.milliseconds() >= 100) {
-                if (!feedPornit) {
-                    feedPornit = true;
-                    timerRampa.reset();
-                }
-            }
-        } else {
-            // Cand nu se trage, blocajul ramane pus
+        if (gamepad1.b) {
+            act_outtake = false;
+            target_atins = false;
+            rampa_jos = false;
             outtake.blocat();
-            deblocatActivat = false;
-            feedPornit = false;
         }
 
-        // Logica pozitionare rampa la tragere
-        if (act_outtake) {
-            if (feedPornit && !rampaCoborata) {
-                boolean declanseazaRampa = false;
+        boolean tragemsinoi = (delta_velocity < 40 && delta_velocity > -11 && act_outtake);
 
-                if (folosescUndershoot) {
-                    boolean undershoot = velocity < (target_velocity - marjaUndershoot);
-                    boolean timeoutSiguranta = fallbackTimerActiv && (timerRampa.milliseconds() >= fallbackTimeoutMs);
-                    declanseazaRampa = undershoot || timeoutSiguranta;
-                } else {
-                    declanseazaRampa = timerRampa.milliseconds() >= delayRampaMs;
-                }
-
-                if (declanseazaRampa) {
-                    outtake.setRampa(posRampaTarget);
-                    rampaCoborata = true;
-                } else {
-                    outtake.setRampa(posRampaInitial);
-                }
-            } else if (rampaCoborata) {
-                outtake.setRampa(posRampaTarget);
-            } else {
-                outtake.setRampa(posRampaInitial);
-            }
-        } else {
-            outtake.setRampa(posRampaInitial);
+        if (tragemsinoi && !target_atins) {
+            outtake.deblocat();
+            target_atins = true;
+            timer.reset();
         }
 
-        // Control motoare Intake si Transfer
-        if (act_outtake) {
-            if (feedPornit) {
-                // Automatizarea cand motoarele sunt la target velocity si blocajul e dat:
-                intake.trage_intake(1.0);
-                intake.trage_transfer(1.0);
-            } else {
-                // Pana atinge target velocity, motoarele stau oprite
-                intake.stop_intake();
-                intake.stop_transfer();
-            }
-        } else if (gamepad1.right_trigger > 0.05) {
-            // Right trigger (cum era inainte: proportional cu trigger-ul la intake)
-            intake.trage_intake(gamepad1.right_trigger);
-            intake.trage_transfer(putereTransferTrigger);
-        } else if (gamepad1.left_trigger > 0.05) {
-            // Left trigger (evacuare / scuipa)
-            intake.scuipa_intake(gamepad1.left_trigger);
-            intake.scuipa_transfer(gamepad1.left_trigger);
-        } else {
+        boolean tragere_inceputa = target_atins && timer.milliseconds() > 250;
+        if (!tragere_inceputa) {
+            viteza_ref = velocity;
+        }
+        else if (viteza_ref - velocity > PRAG_COBORARE) {
+            rampa_jos = true;
+        }
+        rampa_reper = rampa_jos ? RAMPA_JOS : RAMPA_SUS;
+
+        if (gamepad1.left_bumper) {
+            decalation += 0.1 / 320.0;
+        }
+        if (gamepad1.right_bumper) {
+            decalation -= 0.1 / 320.0;
+        }
+
+        if (gamepad1.square) {
+            pinpoint.reset_blue();
+        }
+
+        if (target_atins && timer.milliseconds() > 250) {
+            intake.trage_intake(1);
+            intake.trage_transfer(1);
+        }
+        else if (gamepad1.right_trigger > 0.1) {
+            intake.trage_intake(1);
+            intake.trage_transfer(1);
+        }
+        else if (gamepad1.left_trigger > 0.1) {
+            intake.scuipa_intake(1);
+            intake.scuipa_transfer(1);
+        }
+        else {
             intake.stop_intake();
             intake.stop_transfer();
         }
 
-        if (gamepad1.dpad_up) {
-            intake.farassus();
-        } else if (gamepad1.dpad_down) {
-            intake.farasjos();
-        }
-
-        if (gamepad1.dpad_left) {
-            outtake.blocat();
-        } else if (gamepad1.dpad_right) {
-            outtake.deblocat();
-        }
-
+        telemetry.addData("Rampa jos", rampa_jos);
+        telemetry.addData("Drop viteza", viteza_ref - velocity);
+        telemetry.addData("Delta velocity", delta_velocity);
         telemetry.addData("Act Outtake", act_outtake);
-        telemetry.addData("Poz Rampa Initial", posRampaInitial);
-        telemetry.addData("Poz Rampa Target", posRampaTarget);
-        telemetry.addData("Rampa Pozitie Curenta", rampaCoborata ? posRampaTarget : posRampaInitial);
-        telemetry.addData("Rampa Coborata", rampaCoborata);
-        telemetry.addData("Feed Pornit", feedPornit);
         telemetry.addData("Distanta", distanta);
         telemetry.addData("Velocity", velocity);
         telemetry.addData("Target Vel", target_velocity);
-        telemetry.addData("Boost Vel", OuttakeModule.current_boost);
-        telemetry.addData("Delta Vel", delta_velocity);
-        telemetry.addData("Transfer Voltage", IntakeModule.transferVoltage);
-        telemetry.addData("Cx", currentX);
-        telemetry.addData("Cy", currentY);
         telemetry.update();
     }
 }

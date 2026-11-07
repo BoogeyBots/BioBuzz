@@ -1,15 +1,13 @@
 package org.firstinspires.ftc.teamcode.Module;
 
-import static org.firstinspires.ftc.teamcode.Module.TurretModule.target_x;
-import static org.firstinspires.ftc.teamcode.Module.TurretModule.target_y;
-
+import com.bylazar.configurables.annotations.Configurable;
 import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
-
+@Configurable
 public class PinpointModule {
     HardwareMap hardwareMap;
     public double deltaX, deltaY;
@@ -17,6 +15,8 @@ public class PinpointModule {
     public PinpointModule (HardwareMap hardwareMap) {
         this.hardwareMap = hardwareMap;
     }
+    public static double target_x = 77, target_y = 57;
+
 
     GoBildaPinpointDriver pinpoint;
 
@@ -30,17 +30,29 @@ public class PinpointModule {
         pinpoint.setPosition(new Pose2D(DistanceUnit.INCH, 133, 7, AngleUnit.DEGREES, 0));
     }
 
-    public void update() {
+    public void update_blue() {
         pinpoint.update();
 
         currentHeading = pinpoint.getHeading(AngleUnit.DEGREES);
         currentX = pinpoint.getPosX(DistanceUnit.INCH);
         currentY = pinpoint.getPosY(DistanceUnit.INCH);
 
+        if(currentY > 72) {
+            target_y = 87;
+        }
+
+        else {
+            target_y = 57;
+        }
+
         deltaX = target_x - currentX;
         deltaY = target_y - currentY;
 
         distanta = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    }
+
+    public void reset_blue() {
+        pinpoint.setPosition(new Pose2D(DistanceUnit.INCH, 133, 7, AngleUnit.DEGREES, 0));
     }
 
     public void reset() {

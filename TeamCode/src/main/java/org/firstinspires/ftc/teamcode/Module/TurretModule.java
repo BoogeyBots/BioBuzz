@@ -3,6 +3,8 @@ package org.firstinspires.ftc.teamcode.Module;
 import static org.firstinspires.ftc.teamcode.Module.PinpointModule.currentHeading;
 import static org.firstinspires.ftc.teamcode.Module.PinpointModule.currentX;
 import static org.firstinspires.ftc.teamcode.Module.PinpointModule.currentY;
+import static org.firstinspires.ftc.teamcode.Module.PinpointModule.target_x;
+import static org.firstinspires.ftc.teamcode.Module.PinpointModule.target_y;
 
 import com.bylazar.configurables.annotations.Configurable;
 import com.qualcomm.robotcore.hardware.HardwareMap;
@@ -23,7 +25,6 @@ public class TurretModule {
     private static final double MIN_ANGLE = -160.0, MAX_ANGLE = 160.0;
     private static final double MAX_SERVO_STEP = 0.05;
     public static double decalation;
-    public static double target_x = 85, target_y = 57;
 
     private double lastServoPos = 0.5;
 
@@ -42,7 +43,9 @@ public class TurretModule {
         double turretAngle = AngleUnit.normalizeDegrees(robotRelative - 180.0);
         double clippedAngle = Range.clip(turretAngle, MIN_ANGLE, MAX_ANGLE);
 
-        double requestedServoPos = 0.5 + ((clippedAngle * GEAR_RATIO) / 320) + decalation;
+        // valoarea decalarii se pastreaza, dar efectul ei se inverseaza peste Y = 72
+        double semnDecalare = currentY > 72 ? -1 : 1;
+        double requestedServoPos = 0.5 + ((clippedAngle * GEAR_RATIO) / 320) + semnDecalare * decalation;
 
         double safeServoPosition = Range.clip(requestedServoPos,
                 lastServoPos - MAX_SERVO_STEP,

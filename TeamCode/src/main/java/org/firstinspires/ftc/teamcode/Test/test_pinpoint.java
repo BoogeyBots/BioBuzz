@@ -37,7 +37,7 @@ public class test_pinpoint extends OpMode {
         );
 
         follower.update();
-        p.update();
+        p.update_blue();
         t.update();
 
         telemetry.addData("cx", currentX);

@@ -1,5 +1,7 @@
 package org.firstinspires.ftc.teamcode.Module;
 
+import static org.firstinspires.ftc.teamcode.Module.PinpointModule.distanta;
+
 import com.bylazar.configurables.annotations.Configurable;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
@@ -20,32 +22,12 @@ public class OuttakeModule {
 
     private DcMotorEx motorDR, motorST;
     public Servo servo_rampa, servo_blocaj;
-    private VoltageSensor voltageSensor;
-
-    public static double kp = 0.0023, ki = 0.0, kd = 0.0, ks = 0.09, kv = 0.0004969568, ka = 0.005;
-    public static double target_velocity, velocity;
+    public static double kp = 0.001, ki = 0.0, kd = 0.0, ks = 0.09, kv = 0.000496265, ka = 0.005, val_random = 1180, progresie = 4, regresie = 0.005;
+    public static double target_velocity, rampa = 1;
+    public static double velocity;
     public static boolean act_outtake;
-    public static double voltage = 12.0;
-    public static double nominal_voltage = 10.67;
-
-    public static double POS_RAMPA_INITIAL = 0.68;
-    public static double POS_RAMPA_TARGET = 1.0;
-    public static double POS_RAMPA_JOS = POS_RAMPA_INITIAL;
-    public static double POS_RAMPA_SUS = POS_RAMPA_TARGET;
-
-    // --- BOOST VELOCITY LOGIC (pentru tragerea celor 4 bile) ---
-    public static boolean enable_boost = true;
-    public static double drop_threshold = 50.0;
-    public static double boost_velocity = 30.0;
-    public static boolean cumulative_boost = true;
-    public static double max_boost = 150.0;
-    public static double ready_margin = 35.0;
-    public static double boost_cooldown_ms = 200.0;
-
-    public static double current_boost = 0.0;
-    public static boolean has_reached_target = false;
-    private static boolean is_in_drop = false;
-    private ElapsedTime boostCooldownTimer = new ElapsedTime();
+    double nominalvoltage = 9.3;
+    public static double rampa_reper = 0.96;
 
     private PIDFController controller;
     private SimpleMotorFeedforward feedforward;
@@ -57,22 +39,13 @@ public class OuttakeModule {
         servo_blocaj = hardwareMap.get(Servo.class, "servo_blocaj");
         servo_rampa = hardwareMap.get(Servo.class, "servo_shooter");
 
-        try {
-            voltageSensor = hardwareMap.voltageSensor.iterator().next();
-        } catch (Exception e) {
-            voltageSensor = null;
-        }
-
         motorDR.setDirection(DcMotorSimple.Direction.REVERSE);
 
         controller = new PIDFController(kp, ki, kd, 0);
         feedforward = new SimpleMotorFeedforward(ks, kv, ka);
 
         blocat();
-        rampaInitial();
-
-        resetBoost();
-        target_velocity = 0;
+        target_velocity = 1200;
     }
 
     public void blocat() {
@@ -83,112 +56,38 @@ public class OuttakeModule {
         servo_blocaj.setPosition(0.3);
     }
 
-    public void rampaInitial() {
-        servo_rampa.setPosition(POS_RAMPA_INITIAL);
-    }
-
-    public void rampaTarget() {
-        servo_rampa.setPosition(POS_RAMPA_TARGET);
-    }
-
-    public void rampaJos() {
-        rampaInitial();
-    }
-
-    public void rampaSus() {
-        rampaTarget();
-    }
-
-    public void rampaInit() {
-        rampaInitial();
-    }
-
-    public void setRampa(double position) {
-        servo_rampa.setPosition(position);
-    }
-
-    /**
-     * Reseteaza starea de boost (cand shooter-ul este oprit sau la inceputul unei noi trageri).
-     */
-    public void resetBoost() {
-        current_boost = 0.0;
-        has_reached_target = false;
-        is_in_drop = false;
-        boostCooldownTimer.reset();
-    }
-
-    /**
-     * Functie care verifica daca s-au pierdut drop_threshold unitati de velocity
-     * si creste viteza tinta cu boost_velocity.
-     */
-    public double checkVelocityBoost(double baseVel) {
-        if (!enable_boost || !act_outtake) {
-            resetBoost();
-            return 0.0;
-        }
-
-        double currentTarget = baseVel + current_boost;
-
-        // 1. Verificam daca shooter-ul a ajuns la viteza inainte de a detecta pierderile cauzate de bila
-        if (!has_reached_target) {
-            if (velocity >= (currentTarget - ready_margin)) {
-                has_reached_target = true;
-                is_in_drop = false;
-            }
-        } else {
-            // 2. Cand shooter-ul e la viteza si intra bila, viteza scade
-            double drop = currentTarget - velocity;
-            if (drop >= drop_threshold && !is_in_drop && boostCooldownTimer.milliseconds() >= boost_cooldown_ms) {
-                is_in_drop = true;
-                boostCooldownTimer.reset();
-
-                if (cumulative_boost) {
-                    current_boost = Math.min(current_boost + boost_velocity, max_boost);
-                } else {
-                    current_boost = boost_velocity;
-                }
-
-                // Dupa adaugarea boost-ului, asteptam sa atinga noul target inainte de urmatoarea bila
-                has_reached_target = false;
-            }
-        }
-
-        return current_boost;
-    }
-
-    public double getBoostedVelocity(double baseVel) {
-        return baseVel + current_boost;
-    }
-
-    public void update(double vel) {
-        velocity = motorDR.getVelocity();
-
-        if (voltageSensor != null) {
-            try {
-                voltage = voltageSensor.getVoltage();
-            } catch (Exception ignored) {
-            }
-        }
-
+    public void update(double voltage) {
+        velocity = -motorDR.getVelocity();
         if (act_outtake) {
-            checkVelocityBoost(vel);
-            target_velocity = vel + current_boost;
-        } else {
-            resetBoost();
-            target_velocity = vel;
+            target_velocity = val_random + distanta * progresie;
+
+            rampa = rampa_reper - distanta * regresie; //regresie - 0.0057
+
+            servo_rampa.setPosition(rampa);
         }
 
-        if (target_velocity <= 0) {
-            motorDR.setPower(0);
-            motorST.setPower(0);
-            return;
+        else {
+            target_velocity = 1200;
+        }
+        controller.setPIDF(kp, 0, 0, 0);
+        feedforward = new SimpleMotorFeedforward(ks, kv, ka);
+
+
+        if(target_velocity != 1200) {
+            double PID_output = controller.calculate(velocity, target_velocity);
+            double ff_output = feedforward.calculate(target_velocity);
+            double output = PID_output + ff_output;
+
+            motorDR.setPower(output * (nominalvoltage / voltage));
+            motorST.setPower(output * (nominalvoltage / voltage));
         }
 
-        double output = controller.calculate(velocity, target_velocity) + feedforward.calculate(target_velocity);
-        double compFactor = (voltage > 6.0) ? (nominal_voltage / voltage) : 1.0;
-        double power = output * compFactor;
-
-        motorDR.setPower(power);
-        motorST.setPower(power);
+        else {
+            double PID_output = controller.calculate(velocity, 1200);
+            double ff_output = feedforward.calculate(1200);
+            double output = PID_output + ff_output;
+            motorDR.setPower(output * (nominalvoltage / voltage));
+            motorST.setPower(output * (nominalvoltage / voltage));
+        }
     }
 }
