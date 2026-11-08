@@ -58,8 +58,6 @@ public class TeleOp extends OpMode {
         timer = new ElapsedTime(ElapsedTime.Resolution.MILLISECONDS);
 
         act_outtake = false;
-
-
     }
 
 
@@ -76,6 +74,10 @@ public class TeleOp extends OpMode {
         follower.update();
         pinpoint.update_blue();
         outtake.update(voltage);
+        // Varianta cu tabel interpolat: comentează linia de mai sus și decomentează-le pe astea.
+        // drop vine din loop-ul anterior (viteza_ref e calculată mai jos)
+        // double drop = (target_atins && timer.milliseconds() > 250) ? viteza_ref - velocity : 0;
+        // outtake.update_interp(voltage, drop);
         turret.update();
 
         delta_velocity = velocity - target_velocity - 1;
@@ -113,7 +115,7 @@ public class TeleOp extends OpMode {
         else if (viteza_ref - velocity > PRAG_COBORARE) {
             rampa_jos = true;
         }
-        rampa_reper = rampa_jos ? RAMPA_JOS : RAMPA_SUS;
+        rampa_reper = rampa_jos ? RAMPA_JOS : RAMPA_SUS; // update_interp nu folosește rampa_reper
 
         if (gamepad1.left_bumper) {
             decalation += 0.1 / 320.0;
