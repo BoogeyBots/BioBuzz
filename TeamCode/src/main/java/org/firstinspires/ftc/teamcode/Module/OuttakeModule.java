@@ -9,6 +9,7 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.hardware.VoltageSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import com.qualcomm.robotcore.util.Range;
 import com.seattlesolvers.solverslib.controller.PIDFController;
 import com.seattlesolvers.solverslib.controller.wpilibcontroller.SimpleMotorFeedforward;
 
@@ -22,20 +23,17 @@ public class OuttakeModule {
 
     private DcMotorEx motorDR, motorST;
     public Servo servo_rampa, servo_blocaj;
-    public static double kp = 0.001, ki = 0.0, kd = 0.0, ks = 0.09, kv = 0.000496265, ka = 0.005, val_random = 1180, progresie = 4, regresie = 0.005;
+    public static double kp = 0.001, kp_recovery = 0.003, ki = 0.0, kd = 0.0, ks = 0.09, kv = 0.000496265, ka = 0.005, val_random = 1180, progresie = 4, regresie = 0.05;
+    public static double vel20_25 = 1280, vel25_30 = 1300, vel30_35 = 1320, vel35_40 = 1320, vel40_45 = 1360, vel45_50 = 1350, vel50_55 = 1360;
+    public static double ramp20_25 = 0.875, ramp25_30 = 0.85, ramp30_35 = 0.95, ramp35_40 = 0.88, ramp40_45 = 0.84, ramp45_50 = 0.81, ramp50_55 = 0.79;
+    // Regresie rampa (valori intre -1 si 1, cu + sau -) adaugata la pozitia rampei dupa ce scade viteza (pt ultimele bile)
+    public static double reg20_25 = 0.05, reg25_30 = 0.05, reg30_35 = 0.06, reg35_40 = 0.08, reg40_45 = 0.07, reg45_50 = 0.06, reg50_55 = 0.06;
     public static double target_velocity, rampa = 1;
     public static double velocity;
     public static boolean act_outtake;
+    public static boolean rampa_jos = false;
     double nominalvoltage = 9.3;
     public static double rampa_reper = 0.96;
-
-    // Puncte pentru update_interp, pornite din formulele actuale: vel = 1180 + 4d, rampa = 1 - 0.005d
-    // Tragem între ~25 și ~50; 20 și 55 sunt doar margine
-    public static double[] DIST = { 20,   25,    30,   35,    40,   45,    50,   55 };
-    public static double[] VEL  = { 1260, 1280,  1300, 1320,  1340, 1360,  1380, 1400 };
-    public static double[] RAMP = { 0.90, 0.875, 0.85, 0.825, 0.80, 0.775, 0.75, 0.725 };
-    // 0.05 / 45 -> aceeași corecție ca treapta RAMPA_JOS la pragul PRAG_COBORARE
-    public static double kRampComp = 0.0011, ramp_comp_max = 0.08;
 
     private PIDFController controller;
     private SimpleMotorFeedforward feedforward;
@@ -66,18 +64,63 @@ public class OuttakeModule {
 
     public void update(double voltage) {
         velocity = -motorDR.getVelocity();
-        if (act_outtake) {
-            target_velocity = val_random + distanta * progresie;
 
-            rampa = rampa_reper - distanta * regresie; //regresie - 0.0057
-
-            servo_rampa.setPosition(rampa);
+        if (distanta <= 25 && act_outtake) {
+            target_velocity = vel20_25;
+            rampa = ramp20_25 + (rampa_jos ? reg20_25 : 0);
+            servo_rampa.setPosition(Range.clip(rampa, 0.0, 1.0));
         }
 
-        else {
+        if (distanta <= 30 && distanta > 25 && act_outtake) {
+            target_velocity = vel25_30;
+            rampa = ramp25_30 + (rampa_jos ? reg25_30 : 0);
+            servo_rampa.setPosition(Range.clip(rampa, 0.0, 1.0));
+        }
+
+        if (distanta <= 35 && distanta > 30 && act_outtake) {
+            target_velocity = vel30_35;
+            rampa = ramp30_35 + (rampa_jos ? reg30_35 : 0);
+            servo_rampa.setPosition(Range.clip(rampa, 0.0, 1.0));
+        }
+
+        if (distanta <= 40 && distanta > 35 && act_outtake) {
+            target_velocity = vel35_40;
+            rampa = ramp35_40 + (rampa_jos ? reg35_40 : 0);
+            servo_rampa.setPosition(Range.clip(rampa, 0.0, 1.0));
+        }
+
+        if (distanta <= 45 && distanta > 40 && act_outtake) {
+            target_velocity = vel40_45;
+            rampa = ramp40_45 + (rampa_jos ? reg40_45 : 0);
+            servo_rampa.setPosition(Range.clip(rampa, 0.0, 1.0));
+        }
+
+        if (distanta <= 50 && distanta > 45 && act_outtake) {
+            target_velocity = vel45_50;
+            rampa = ramp45_50 + (rampa_jos ? reg45_50 : 0);
+            servo_rampa.setPosition(Range.clip(rampa, 0.0, 1.0));
+        }
+
+        if (distanta <= 55 && distanta > 50 && act_outtake) {
+            target_velocity = vel50_55;
+            rampa = ramp50_55 + (rampa_jos ? reg50_55 : 0);
+            servo_rampa.setPosition(Range.clip(rampa, 0.0, 1.0));
+        }
+
+        if (distanta > 55 && act_outtake) {
+            double extra_power = distanta - 55;
+            rampa = ramp50_55 + (rampa_jos ? reg50_55 : 0);
+            servo_rampa.setPosition(Range.clip(rampa, 0.0, 1.0));
+            target_velocity = vel50_55 + extra_power * progresie;
+        }
+
+        if (!act_outtake) {
             target_velocity = 1200;
         }
-        controller.setPIDF(kp, 0, 0, 0);
+
+        // Folosim kp_recovery cand viteza a scazut sub tinta cu > 25 ticks/s (recuperare rapida intre cele 4 bile)
+        double activeKp = (act_outtake && (target_velocity - velocity > 25)) ? kp_recovery : kp;
+        controller.setPIDF(activeKp, 0, 0, 0);
         feedforward = new SimpleMotorFeedforward(ks, kv, ka);
 
 
@@ -97,40 +140,5 @@ public class OuttakeModule {
             motorDR.setPower(output * (nominalvoltage / voltage));
             motorST.setPower(output * (nominalvoltage / voltage));
         }
-    }
-
-    // drop = cât a scăzut viteza față de cea dinainte de tragere (0 când nu se trage)
-    public void update_interp(double voltage, double drop) {
-        velocity = -motorDR.getVelocity();
-        if (act_outtake) {
-            target_velocity = interp(DIST, VEL, distanta);
-
-            double comp = Math.min(ramp_comp_max, kRampComp * Math.max(0, drop));
-            rampa = interp(DIST, RAMP, distanta) + comp;
-
-            servo_rampa.setPosition(rampa);
-        }
-
-        else {
-            target_velocity = 1200;
-        }
-        controller.setPIDF(kp, 0, 0, 0);
-        feedforward = new SimpleMotorFeedforward(ks, kv, ka);
-
-        double PID_output = controller.calculate(velocity, target_velocity);
-        double ff_output = feedforward.calculate(target_velocity);
-        double output = PID_output + ff_output;
-
-        motorDR.setPower(output * (nominalvoltage / voltage));
-        motorST.setPower(output * (nominalvoltage / voltage));
-    }
-
-    static double interp(double[] xs, double[] ys, double x) {
-        if (x <= xs[0]) return ys[0];
-        if (x >= xs[xs.length - 1]) return ys[ys.length - 1];
-        int i = 1;
-        while (x > xs[i]) i++;
-        double t = (x - xs[i - 1]) / (xs[i] - xs[i - 1]);
-        return ys[i - 1] + t * (ys[i] - ys[i - 1]);
     }
 }
